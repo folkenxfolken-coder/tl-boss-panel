@@ -2,6 +2,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 
@@ -21,7 +22,53 @@ def clean_name(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip(" -/\n\t")
 
 
-def fetch_text() -> str:
+def strings_in(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from strings_in(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from strings_in(item)
+
+
+def fetch_microlink_text() -> str:
+    # Microlink renders JavaScript in a real browser. Its free endpoint is enough
+    # for this low-frequency dashboard and can sometimes reach pages that reject
+    # datacenter/headless requests made directly by GitHub Actions.
+    endpoint = (
+        "https://api.microlink.io/?url=" + quote(URL, safe="")
+        + "&text=true&meta=false"
+    )
+    r = requests.get(
+        endpoint,
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+        timeout=75,
+    )
+    r.raise_for_status()
+
+    try:
+        payload = r.json()
+        candidates = [s for s in strings_in(payload) if len(s) > 200]
+        # Prefer text that actually contains the timer section.
+        useful = [
+            s for s in candidates
+            if re.search(r"Field Boss|Jefes? de Campo|Chefes? de Campo|T[123]", s, re.I)
+        ]
+        if useful:
+            return max(useful, key=len)
+        if candidates:
+            return max(candidates, key=len)
+    except ValueError:
+        pass
+
+    if len(r.text) > 500:
+        return r.text
+    raise RuntimeError("Microlink response did not contain usable page text")
+
+
+def fetch_jina_text() -> str:
     r = requests.get(
         READER_URL,
         headers={"User-Agent": "Mozilla/5.0", "Accept": "text/plain"},
@@ -29,17 +76,29 @@ def fetch_text() -> str:
     )
     r.raise_for_status()
     if len(r.text) < 500:
-        raise RuntimeError("Reader response too short")
+        raise RuntimeError("Jina reader response too short")
     return r.text
+
+
+def fetch_text() -> tuple[str, str]:
+    errors = []
+    for label, fn in (("microlink", fetch_microlink_text), ("jina", fetch_jina_text)):
+        try:
+            text = fn()
+            if len(text) > 500:
+                return text, label
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+    raise RuntimeError(" | ".join(errors))
 
 
 def parse_field_bosses(text: str):
     rows = []
     lines = [clean_name(re.sub(r"^[*#>\-]+\s*", "", x)) for x in text.splitlines()]
-    # Además de líneas individuales, inspeccionamos ventanas cortas porque el
-    # Markdown puede separar tier, nombre y hora en líneas consecutivas.
+    # Además de líneas individuales, inspeccionamos ventanas cortas porque la
+    # fuente puede separar tier, nombre y hora en líneas consecutivas.
     candidates = [x for x in lines if x]
-    candidates += [clean_name(" ".join(lines[i:i+4])) for i in range(len(lines))]
+    candidates += [clean_name(" ".join(lines[i:i+5])) for i in range(len(lines))]
 
     for line in candidates:
         if not re.search(r"\bT[123]\b", line) or not re.search(r"\b\d{1,2}:\d{2}\b", line):
@@ -58,7 +117,8 @@ def parse_field_bosses(text: str):
         for m in pattern.finditer(before):
             name = clean_name(m.group(2))
             name = re.sub(r"\s+(?:in|hace|em)\s+.*$", "", name, flags=re.I).strip()
-            if name and len(name) < 90:
+            # Excluye textos genéricos/labels que no son nombres de bosses.
+            if name and len(name) < 90 and not re.fullmatch(r"Field Boss(?:es)?|Jefes? de Campo", name, re.I):
                 bosses.append({"tier": f"T{m.group(1)}", "name": name, "type": "field"})
         if bosses:
             rows.append({"time": chile_time(source_time), "bosses": bosses})
@@ -98,11 +158,11 @@ def add_archbosses(text: str, slots):
 
 
 def main():
-    text = fetch_text()
+    text, fetcher = fetch_text()
     slots = add_archbosses(text, parse_field_bosses(text))
     if not slots:
         print(text[:8000])
-        raise RuntimeError("No boss rows recognized from Latin America reader output")
+        raise RuntimeError(f"No boss rows recognized from {fetcher} output")
 
     # El panel prioriza las franjas que el usuario usa en Chile, pero conserva
     # cualquier franja adicional si contiene un Archboss.
@@ -119,6 +179,7 @@ def main():
         "source": URL,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "fallback": False,
+        "fetcher": fetcher,
         "slots": slots,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
