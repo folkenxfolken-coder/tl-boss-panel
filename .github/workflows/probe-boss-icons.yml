@@ -1,10 +1,10 @@
-name: Probe boss icons
+name: Probe Questlog chunks
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "scripts/probe_boss_icons.py"
+      - "scripts/probe_questlog_chunks.py"
       - ".github/workflows/probe-boss-icons.yml"
 
 permissions:
@@ -19,4 +19,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests
-      - run: python scripts/probe_boss_icons.py
+      - run: python scripts/probe_questlog_chunks.py
