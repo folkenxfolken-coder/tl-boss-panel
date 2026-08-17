@@ -5,14 +5,14 @@ from pathlib import Path
 
 import requests
 
-URL = "https://questlog.gg/throne-and-liberty/en/event-calendar"
-READER_URL = "https://r.jina.ai/http://questlog.gg/throne-and-liberty/en/event-calendar"
+URL = "https://questlog.gg/throne-and-liberty/sa/event-calendar"
+READER_URL = "https://r.jina.ai/http://questlog.gg/throne-and-liberty/sa/event-calendar"
 OUT = Path("site/boss-data.json")
 
 
 def chile_time(source_time: str) -> str:
-    # The user's Eclipse clock is currently one hour ahead of the schedule
-    # exposed by the source snapshot used for this panel: 19->20, 22->23.
+    # Ajuste observado en Eclipse por el usuario: la franja mostrada como
+    # 19:00/22:00 en la fuente corresponde a 20:00/23:00 en su horario de Chile.
     h, m = map(int, source_time.split(":"))
     return f"{(h + 1) % 24:02d}:{m:02d}"
 
@@ -35,10 +35,13 @@ def fetch_text() -> str:
 
 def parse_field_bosses(text: str):
     rows = []
-    # Jina returns Markdown. Typical rows are bullet points such as:
-    # * T3 Ascended Nirma / T2 Pakilo Naru 23:00 · in 10 hours
-    for line in text.splitlines():
-        line = clean_name(re.sub(r"^[*#>\-]+\s*", "", line))
+    lines = [clean_name(re.sub(r"^[*#>\-]+\s*", "", x)) for x in text.splitlines()]
+    # Además de líneas individuales, inspeccionamos ventanas cortas porque el
+    # Markdown puede separar tier, nombre y hora en líneas consecutivas.
+    candidates = [x for x in lines if x]
+    candidates += [clean_name(" ".join(lines[i:i+4])) for i in range(len(lines))]
+
+    for line in candidates:
         if not re.search(r"\bT[123]\b", line) or not re.search(r"\b\d{1,2}:\d{2}\b", line):
             continue
         tm = list(re.finditer(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", line))
@@ -54,6 +57,7 @@ def parse_field_bosses(text: str):
         )
         for m in pattern.finditer(before):
             name = clean_name(m.group(2))
+            name = re.sub(r"\s+(?:in|hace|em)\s+.*$", "", name, flags=re.I).strip()
             if name and len(name) < 90:
                 bosses.append({"tier": f"T{m.group(1)}", "name": name, "type": "field"})
         if bosses:
@@ -79,7 +83,7 @@ def add_archbosses(text: str, slots):
     for name in arch_names:
         for m in re.finditer(re.escape(name), flat, re.I):
             window = flat[max(0, m.start()-250):m.end()+250]
-            if not re.search(r"arch\s*boss|archboss|ark\s*boss", window, re.I):
+            if not re.search(r"arch\s*boss|archboss|ark\s*boss|arqui", window, re.I):
                 continue
             times = re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", window)
             if not times:
@@ -97,9 +101,11 @@ def main():
     text = fetch_text()
     slots = add_archbosses(text, parse_field_bosses(text))
     if not slots:
-        print(text[:5000])
-        raise RuntimeError("No boss rows recognized from reader output")
+        print(text[:8000])
+        raise RuntimeError("No boss rows recognized from Latin America reader output")
 
+    # El panel prioriza las franjas que el usuario usa en Chile, pero conserva
+    # cualquier franja adicional si contiene un Archboss.
     preferred = [
         s for s in slots
         if s["time"] in {"20:00", "23:00"}
