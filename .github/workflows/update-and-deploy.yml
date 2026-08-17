@@ -29,7 +29,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install scraper dependencies
-        run: pip install requests
+        run: |
+          pip install requests playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Probe Questlog live calendar
+        continue-on-error: true
+        run: python scripts/probe_questlog.py
 
       - name: Refresh boss schedule for this deployment
         continue-on-error: true
