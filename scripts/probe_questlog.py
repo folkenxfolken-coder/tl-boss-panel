@@ -1,8 +1,12 @@
 import asyncio
+import json
 import re
 from playwright.async_api import async_playwright
 
-URL = "https://questlog.gg/throne-and-liberty/en/event-calendar"
+URLS = [
+    "https://throneandliberty.gameslantern.com/event-calendar",
+    "https://throneandliberty.gameslantern.com/server-events",
+]
 
 async def main():
     async with async_playwright() as p:
@@ -10,7 +14,7 @@ async def main():
         context = await browser.new_context(
             locale="en-US",
             timezone_id="America/Santiago",
-            viewport={"width": 1440, "height": 1200},
+            viewport={"width": 1600, "height": 1400},
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -18,61 +22,84 @@ async def main():
             ),
         )
         page = await context.new_page()
-        seen_api = set()
+        seen = set()
 
         async def inspect_response(resp):
             u = resp.url
             lu = u.lower()
-            if "questlog.gg" in lu and ("/api/" in lu or "trpc" in lu):
-                if u not in seen_api:
-                    seen_api.add(u)
-                    print("API:", resp.status, u, resp.headers.get("content-type", ""))
+            ctype = resp.headers.get("content-type", "")
+            interesting = any(x in lu for x in ["api", "event", "server", "schedule", "calendar", "amazon", "ags", "eclipse"])
+            if interesting and u not in seen:
+                seen.add(u)
+                print("NET", resp.status, ctype, u)
+                if "json" in ctype or "/api/" in lu:
                     try:
                         body = await resp.text()
-                        print("API_BODY:", body[:20000])
+                        print("NET_BODY", body[:30000])
                     except Exception as e:
-                        print("API_BODY_ERROR", repr(e))
+                        print("NET_BODY_ERR", repr(e))
 
-        page.on("response", lambda resp: asyncio.create_task(inspect_response(resp)))
-        await page.goto(URL, wait_until="networkidle", timeout=90000)
-        await page.wait_for_timeout(6000)
+        page.on("response", lambda r: asyncio.create_task(inspect_response(r)))
 
-        print("TITLE:", await page.title())
-        print("BODY:", (await page.locator("body").inner_text())[:12000])
-
-        resources = await page.evaluate("performance.getEntriesByType('resource').map(x => x.name)")
-        js_urls = []
-        for u in resources:
-            if "questlog.gg" in u and (u.endswith(".js") or ".js?" in u or "/_nuxt/" in u):
-                if u not in js_urls:
-                    js_urls.append(u)
-        print("JS_COUNT", len(js_urls))
-
-        methods = set()
-        for u in js_urls:
+        for url in URLS:
+            print("OPEN", url)
             try:
-                r = await context.request.get(u, timeout=30000)
-                if not r.ok:
-                    continue
-                text = await r.text()
-                low = text.lower()
-                if "eventcalendar" not in low and "getfieldbossentries" not in low and "ark boss" not in low and "field bosses" not in low:
-                    continue
-                print("JS_MATCH_URL", u)
-                for needle in ["getFieldBossEntries", "eventCalendar", "Ark Boss", "Archboss", "Field Bosses", "Boss Schedule"]:
-                    pos = text.lower().find(needle.lower())
-                    if pos >= 0:
-                        print("JS_MATCH", needle)
-                        print(text[max(0, pos-5000):pos+12000])
-                for m in re.findall(r"eventCalendar\.([A-Za-z0-9_]+)", text):
-                    methods.add(m)
-                for m in re.findall(r"eventCalendar[^A-Za-z0-9_]+([A-Za-z0-9_]{3,})", text):
-                    if m.lower() not in {"query", "mutate", "value", "data"}:
-                        methods.add(m)
+                await page.goto(url, wait_until="networkidle", timeout=90000)
             except Exception as e:
-                print("JS_ERR", u, repr(e))
+                print("GOTO_ERR", repr(e))
+            await page.wait_for_timeout(5000)
+            print("TITLE", await page.title())
+            body = await page.locator("body").inner_text()
+            print("BODY", body[:20000])
 
-        print("EVENTCAL_METHODS", sorted(methods))
+            selects = await page.locator("select").count()
+            print("SELECT_COUNT", selects)
+            for i in range(selects):
+                sel = page.locator("select").nth(i)
+                try:
+                    opts = await sel.locator("option").all_text_contents()
+                    vals = await sel.locator("option").evaluate_all("els => els.map(x => x.value)")
+                    print("SELECT", i, list(zip(vals, opts))[:500])
+                    for value, label in zip(vals, opts):
+                        if "eclipse" in label.lower():
+                            print("FOUND_ECLIPSE_SELECT", i, value, label)
+                            await sel.select_option(value=value)
+                            await page.wait_for_timeout(5000)
+                            print("BODY_AFTER_ECLIPSE", (await page.locator("body").inner_text())[:20000])
+                except Exception as e:
+                    print("SELECT_ERR", i, repr(e))
+
+            # Dump useful interactive controls for custom dropdowns.
+            controls = await page.locator("button, input, [role=button], [role=option], [role=combobox]").evaluate_all(
+                "els => els.slice(0,500).map(e => ({tag:e.tagName, text:(e.innerText||e.value||e.getAttribute('aria-label')||'').trim(), role:e.getAttribute('role'), cls:e.className}))"
+            )
+            print("CONTROLS", json.dumps(controls, ensure_ascii=False)[:40000])
+
+            # Try clicking any visible control mentioning server, then search Eclipse text.
+            candidates = page.get_by_text(re.compile("server", re.I))
+            for i in range(min(await candidates.count(), 12)):
+                try:
+                    c = candidates.nth(i)
+                    if await c.is_visible():
+                        print("CLICK_SERVER_TEXT", i, (await c.inner_text())[:300])
+                        await c.click(timeout=3000)
+                        await page.wait_for_timeout(1200)
+                        eclipse = page.get_by_text(re.compile("^Eclipse$", re.I))
+                        if await eclipse.count():
+                            for j in range(await eclipse.count()):
+                                e = eclipse.nth(j)
+                                if await e.is_visible():
+                                    print("CLICK_ECLIPSE", j)
+                                    await e.click(timeout=3000)
+                                    await page.wait_for_timeout(5000)
+                                    print("BODY_AFTER_ECLIPSE_CUSTOM", (await page.locator("body").inner_text())[:20000])
+                                    break
+                except Exception as e:
+                    print("CLICK_ERR", i, repr(e))
+
+            resources = await page.evaluate("performance.getEntriesByType('resource').map(x => x.name)")
+            print("RESOURCES", json.dumps([u for u in resources if any(x in u.lower() for x in ['api','event','server','calendar','schedule'])], ensure_ascii=False)[:60000])
+
         await browser.close()
 
 if __name__ == "__main__":
