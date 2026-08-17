@@ -6,29 +6,18 @@ from zoneinfo import ZoneInfo
 OUT = Path("site/boss-data.json")
 CHILE = ZoneInfo("America/Santiago")
 
-# IMPORTANT:
-# The field-boss rotation advances on EVERY field-boss spawn, not only on the
-# evening spawns. This is why the previous 20:00/23:00-only model mixed names.
-#
-# Questlog's indexed calendar for 2026-07-15 shows this consecutive sequence:
-#   01:00 Ascended Grand Aelon + Manticus
-#   13:00 Ascended Adentus + Daigon
-#   16:00 Ascended Nirma + Pakilo Naru
-#   20:00 Ascended Ahzreil + Leviathan
-#   23:00 Ascended Excavator-9 + Daigon
-#
-# The user's Eclipse in-game calendar is one hour later on the Chile clock in
-# the supplied screenshot, so the corresponding Chile slots are
-# 02:00 / 14:00 / 17:00 / 21:00 / 00:00.
-# We anchor the rotation at the unambiguous 14:00 Adentus+Daigon slot.
+# The boss names rotate on every field-boss slot.  The phase below is anchored
+# to a dated Eclipse in-game observation and cross-checked against Questlog's
+# dated T3/T2 sequence.  Do not add Archboss names here unless a current source
+# identifies the exact boss for Americas; showing no name is better than a
+# fabricated Ramux entry.
 ANCHOR_DATE = datetime(2026, 7, 15, 14, 0, tzinfo=CHILE)
 ANCHOR_INDEX = 5
 
-# Actual Chile-local field-boss slots for this Eclipse panel.
-FIELD_HOURS = [0, 2, 14, 17, 21]
+# Eclipse times observed on the Chile clock.  Earlier builds mistakenly used
+# 21:00/00:00; the evening slots are 20:00/23:00.
+FIELD_HOURS = [2, 14, 17, 20, 23]
 
-# 16-step T3/T2 rotation reconstructed from overlapping dated Questlog indexes.
-# Repeated bosses in the cycle are intentional: the paired T2 differs.
 ROTATION = [
     ("Ascended Aridus", "Leviathan"),
     ("Ascended Malakar", "Manticus"),
@@ -50,10 +39,8 @@ ROTATION = [
 
 
 def rotation_index(target: datetime) -> int:
-    """Return the rotation phase for an exact Chile-local field-boss slot."""
     if target.hour not in FIELD_HOURS or target.minute != 0:
-        raise ValueError("target must be a standard field-boss slot")
-
+        raise ValueError("target must be an Eclipse field-boss slot")
     days = (target.date() - ANCHOR_DATE.date()).days
     anchor_pos = FIELD_HOURS.index(ANCHOR_DATE.hour)
     target_pos = FIELD_HOURS.index(target.hour)
@@ -62,8 +49,7 @@ def rotation_index(target: datetime) -> int:
 
 
 def field_bosses_for(target: datetime):
-    i = rotation_index(target)
-    t3, t2 = ROTATION[i]
+    t3, t2 = ROTATION[rotation_index(target)]
     return [
         {"tier": "T3", "name": t3, "type": "field"},
         {"tier": "T2", "name": t2, "type": "field"},
@@ -73,10 +59,7 @@ def field_bosses_for(target: datetime):
 def build_slots():
     now = datetime.now(CHILE)
     slots = []
-
-    # Generate all five daily field-boss slots. The old version only emitted
-    # 20/23 and therefore skipped three rotation advances every day.
-    for offset in range(0, 6):
+    for offset in range(0, 7):
         day = (now + timedelta(days=offset)).date()
         for hour in FIELD_HOURS:
             target = datetime(day.year, day.month, day.day, hour, 0, tzinfo=CHILE)
@@ -87,19 +70,19 @@ def build_slots():
                 "time": target.strftime("%H:%M"),
                 "bosses": field_bosses_for(target),
             })
-
     slots.sort(key=lambda x: (x["date"], x["time"]))
-    return slots[:14]
+    return slots[:16]
 
 
 def main():
     payload = {
-        "source": "Questlog indexed dated rotation + Eclipse in-game calendar",
+        "source": "Questlog dated T3/T2 sequence + Eclipse in-game timing",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "fallback": False,
-        "model": "dated-rotation-v2-all-slots",
+        "model": "eclipse-field-rotation-v3",
         "anchor": "2026-07-15T14:00 America/Santiago = Ascended Adentus + Daigon",
-        "field_hours_chile": ["00:00", "02:00", "14:00", "17:00", "21:00"],
+        "field_hours_chile": ["02:00", "14:00", "17:00", "20:00", "23:00"],
+        "archboss_note": "Current public Questlog data does not identify the exact Americas Archboss name; no Archboss is injected without verification.",
         "slots": build_slots(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
