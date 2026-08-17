@@ -33,9 +33,10 @@ jobs:
           pip install requests playwright
           python -m playwright install --with-deps chromium
 
-      - name: Probe Questlog live calendar
+      - name: Probe live server calendar
         continue-on-error: true
-        run: python scripts/probe_questlog.py
+        run: |
+          python scripts/probe_questlog.py 2>&1 | tee site/probe-output.txt
 
       - name: Refresh boss schedule for this deployment
         continue-on-error: true
