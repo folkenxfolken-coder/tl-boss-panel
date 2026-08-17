@@ -6,15 +6,29 @@ from zoneinfo import ZoneInfo
 OUT = Path("site/boss-data.json")
 CHILE = ZoneInfo("America/Santiago")
 
-# Questlog's indexed calendar after update 4.2.0 exposes a stable 16-step
-# T3/T2 rotation. 2026-07-09 13:00 is an explicit date anchor where the
-# calendar shows Ascended Adentus + Daigon. Hidden slots (01/13/16) still
-# advance the rotation even though this dashboard only displays 20/23.
-ANCHOR_DATE = datetime(2026, 7, 9, 13, 0, tzinfo=CHILE)
+# IMPORTANT:
+# The field-boss rotation advances on EVERY field-boss spawn, not only on the
+# evening spawns. This is why the previous 20:00/23:00-only model mixed names.
+#
+# Questlog's indexed calendar for 2026-07-15 shows this consecutive sequence:
+#   01:00 Ascended Grand Aelon + Manticus
+#   13:00 Ascended Adentus + Daigon
+#   16:00 Ascended Nirma + Pakilo Naru
+#   20:00 Ascended Ahzreil + Leviathan
+#   23:00 Ascended Excavator-9 + Daigon
+#
+# The user's Eclipse in-game calendar is one hour later on the Chile clock in
+# the supplied screenshot, so the corresponding Chile slots are
+# 02:00 / 14:00 / 17:00 / 21:00 / 00:00.
+# We anchor the rotation at the unambiguous 14:00 Adentus+Daigon slot.
+ANCHOR_DATE = datetime(2026, 7, 15, 14, 0, tzinfo=CHILE)
 ANCHOR_INDEX = 5
-ALL_FIELD_HOURS = [1, 13, 16, 20, 23]
-DISPLAY_HOURS = [20, 23]
 
+# Actual Chile-local field-boss slots for this Eclipse panel.
+FIELD_HOURS = [0, 2, 14, 17, 21]
+
+# 16-step T3/T2 rotation reconstructed from overlapping dated Questlog indexes.
+# Repeated bosses in the cycle are intentional: the paired T2 differs.
 ROTATION = [
     ("Ascended Aridus", "Leviathan"),
     ("Ascended Malakar", "Manticus"),
@@ -36,13 +50,14 @@ ROTATION = [
 
 
 def rotation_index(target: datetime) -> int:
-    """Return rotation phase for an exact standard field-boss slot."""
-    if target.hour not in ALL_FIELD_HOURS or target.minute != 0:
-        raise ValueError("target must be a standard field boss slot")
+    """Return the rotation phase for an exact Chile-local field-boss slot."""
+    if target.hour not in FIELD_HOURS or target.minute != 0:
+        raise ValueError("target must be a standard field-boss slot")
+
     days = (target.date() - ANCHOR_DATE.date()).days
-    anchor_pos = ALL_FIELD_HOURS.index(ANCHOR_DATE.hour)
-    target_pos = ALL_FIELD_HOURS.index(target.hour)
-    steps = days * len(ALL_FIELD_HOURS) + target_pos - anchor_pos
+    anchor_pos = FIELD_HOURS.index(ANCHOR_DATE.hour)
+    target_pos = FIELD_HOURS.index(target.hour)
+    steps = days * len(FIELD_HOURS) + target_pos - anchor_pos
     return (ANCHOR_INDEX + steps) % len(ROTATION)
 
 
@@ -55,41 +70,36 @@ def field_bosses_for(target: datetime):
     ]
 
 
-def add_known_archbosses(target: datetime, bosses: list[dict]):
-    # Update 4.5.0 added Ramux Peace/Guild events on Tuesdays and Fridays
-    # at 19:00 and 22:00 server time. For this Eclipse/Chile dashboard the
-    # user-observed corresponding display slots are 20:00 and 23:00.
-    if target.weekday() in {1, 4}:  # Tuesday, Friday
-        bosses.append({"tier": "ARCH", "name": "Ramux", "type": "archboss"})
-    return bosses
-
-
 def build_slots():
     now = datetime.now(CHILE)
     slots = []
-    # Include enough future data that the page never has to invent/repeat names.
-    for offset in range(0, 8):
+
+    # Generate all five daily field-boss slots. The old version only emitted
+    # 20/23 and therefore skipped three rotation advances every day.
+    for offset in range(0, 6):
         day = (now + timedelta(days=offset)).date()
-        for hour in DISPLAY_HOURS:
+        for hour in FIELD_HOURS:
             target = datetime(day.year, day.month, day.day, hour, 0, tzinfo=CHILE)
             if target <= now:
                 continue
-            bosses = add_known_archbosses(target, field_bosses_for(target))
             slots.append({
                 "date": target.date().isoformat(),
                 "time": target.strftime("%H:%M"),
-                "bosses": bosses,
+                "bosses": field_bosses_for(target),
             })
-    return slots[:10]
+
+    slots.sort(key=lambda x: (x["date"], x["time"]))
+    return slots[:14]
 
 
 def main():
     payload = {
-        "source": "Questlog indexed boss rotation + official TL Update 4.5.0",
+        "source": "Questlog indexed dated rotation + Eclipse in-game calendar",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "fallback": False,
-        "model": "dated-rotation-v1",
-        "anchor": "2026-07-09T13:00 America/Santiago",
+        "model": "dated-rotation-v2-all-slots",
+        "anchor": "2026-07-15T14:00 America/Santiago = Ascended Adentus + Daigon",
+        "field_hours_chile": ["00:00", "02:00", "14:00", "17:00", "21:00"],
         "slots": build_slots(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
