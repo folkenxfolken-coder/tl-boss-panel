@@ -1,20 +1,188 @@
 {
-  "source": "https://questlog.gg/throne-and-liberty/en/event-calendar",
-  "updated_at": null,
-  "fallback": true,
+  "source": "Questlog indexed boss rotation + official TL Update 4.5.0",
+  "updated_at": "2026-08-17T03:09:19.093578+00:00",
+  "fallback": false,
+  "model": "dated-rotation-v1",
+  "anchor": "2026-07-09T13:00 America/Santiago",
   "slots": [
     {
+      "date": "2026-08-17",
       "time": "20:00",
       "bosses": [
-        {"tier": "T3", "name": "Ascended Field Boss", "type": "field"},
-        {"tier": "T2", "name": "Field Boss", "type": "field"}
+        {
+          "tier": "T3",
+          "name": "Ascended Junobote",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Leviathan",
+          "type": "field"
+        }
       ]
     },
     {
+      "date": "2026-08-17",
       "time": "23:00",
       "bosses": [
-        {"tier": "T3", "name": "Ascended Field Boss", "type": "field"},
-        {"tier": "T2", "name": "Field Boss", "type": "field"}
+        {
+          "tier": "T3",
+          "name": "Ascended Morokai",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Pakilo Naru",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-18",
+      "time": "20:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Ahzreil",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Manticus",
+          "type": "field"
+        },
+        {
+          "tier": "ARCH",
+          "name": "Ramux",
+          "type": "archboss"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-18",
+      "time": "23:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Aridus",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Leviathan",
+          "type": "field"
+        },
+        {
+          "tier": "ARCH",
+          "name": "Ramux",
+          "type": "archboss"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-19",
+      "time": "20:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Grand Aelon",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Manticus",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-19",
+      "time": "23:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Adentus",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Daigon",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-20",
+      "time": "20:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Minezerok",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Manticus",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-20",
+      "time": "23:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Junobote",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Leviathan",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-21",
+      "time": "20:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Chernobog",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Daigon",
+          "type": "field"
+        },
+        {
+          "tier": "ARCH",
+          "name": "Ramux",
+          "type": "archboss"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-21",
+      "time": "23:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Ahzreil",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Manticus",
+          "type": "field"
+        },
+        {
+          "tier": "ARCH",
+          "name": "Ramux",
+          "type": "archboss"
+        }
       ]
     }
   ]
