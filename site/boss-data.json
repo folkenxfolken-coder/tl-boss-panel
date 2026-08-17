@@ -1,0 +1,21 @@
+{
+  "source": "https://questlog.gg/throne-and-liberty/en/event-calendar",
+  "updated_at": null,
+  "fallback": true,
+  "slots": [
+    {
+      "time": "20:00",
+      "bosses": [
+        {"tier": "T3", "name": "Ascended Field Boss", "type": "field"},
+        {"tier": "T2", "name": "Field Boss", "type": "field"}
+      ]
+    },
+    {
+      "time": "23:00",
+      "bosses": [
+        {"tier": "T3", "name": "Ascended Field Boss", "type": "field"},
+        {"tier": "T2", "name": "Field Boss", "type": "field"}
+      ]
+    }
+  ]
+}
