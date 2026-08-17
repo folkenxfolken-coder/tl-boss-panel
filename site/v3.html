@@ -1,0 +1,16 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TL Boss Panel — Eclipse</title><style>html,body{margin:0;background:#04070a;color:#fff;font-family:Segoe UI,Arial,sans-serif}.loading{height:100vh;display:grid;place-items:center;color:#7aa9c8;letter-spacing:.12em}</style></head><body><div class="loading">CARGANDO BOSS PANEL…</div><script>
+const FIELD=`<svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><path d="M50 10c13 0 23 10 23 24v9c0 20-10 35-23 35S27 63 27 43v-9c0-14 10-24 23-24Z" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-width="4"/><path d="M35 20 27 8M65 20l8-12M39 18 35 5M61 18l4-13M28 38 13 31M72 38l15 31M29 54 12 66M71 54l17 12" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="M35 39 44 35 40 48 31 47l4-8ZM65 39 56 35l4 13 9-1-4-8Z" fill="currentColor"/><path d="M41 59c3 4 6 6 9 6s6-2 9-6M50 49v16" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="M37 75 30 88M63 75l7 13" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`;
+const ARCH=`<svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><path d="M24 27 13 12M76 27l11-15" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M50 12c20 0 35 15 35 35v5c0 22-15 36-35 36S15 74 15 52v-5c0-20 15-35 35-35Z" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-width="4"/><path d="M27 42 40 33l10 8 10-8 13 9-5 17H32l-5-17Z" fill="currentColor"/><path d="M31 67c6-7 12-10 19-10s13 3 19 10" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M28 51 40 48M72 51 60 48" stroke="#071018" stroke-width="5" stroke-linecap="round"/><path d="M38 76 50 82 62 76" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`;
+fetch('./v2.html?theme=3',{cache:'no-store'}).then(r=>r.text()).then(t=>{
+ t=t.replace(/const FIELD_ICON=`[\s\S]*?`;/,`const FIELD_ICON=\`${FIELD}\`;`)
+    .replace(/const ARCH_ICON=`[\s\S]*?`;/,`const ARCH_ICON=\`${ARCH}\`;`)
+    .replace(/--arch:#e8bf58/g,'--arch:#ff5151')
+    .replace(/rgba\(232,191,88/g,'rgba(255,81,81')
+    .replace(/rgba\(215,166,58/g,'rgba(255,81,81')
+    .replace(/\.heroGlyph svg\{width:178px;height:178px/,' .heroGlyph svg{width:205px;height:205px')
+    .replace(/\.heroGlyph\{width:210px;height:210px/,' .heroGlyph{width:230px;height:220px')
+    .replace(/<span class="ver">v3<\/span>/,'<span class="ver">v3.1</span>')
+    .replace(/sello azul para Field Boss y corona dorada para Archboss/g,'insecto cyan para Field Boss y demonio rojo para Archboss');
+ document.open();document.write(t);document.close();
+}).catch(e=>{document.body.innerHTML='<div class="loading">NO SE PUDO CARGAR EL PANEL</div>'});
+</script></body></html>
