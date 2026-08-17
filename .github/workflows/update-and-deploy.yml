@@ -29,7 +29,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install scraper dependencies
-        run: pip install requests beautifulsoup4
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
 
       - name: Update boss schedule
         run: python scripts/update_bosses.py
