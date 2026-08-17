@@ -3,13 +3,16 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+import requests
 
 URL = "https://questlog.gg/throne-and-liberty/en/event-calendar"
+READER_URL = "https://r.jina.ai/http://questlog.gg/throne-and-liberty/en/event-calendar"
 OUT = Path("site/boss-data.json")
 
 
 def chile_time(source_time: str) -> str:
+    # The user's Eclipse clock is currently one hour ahead of the schedule
+    # exposed by the source snapshot used for this panel: 19->20, 22->23.
     h, m = map(int, source_time.split(":"))
     return f"{(h + 1) % 24:02d}:{m:02d}"
 
@@ -18,32 +21,24 @@ def clean_name(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip(" -/\n\t")
 
 
-def rendered_text() -> str:
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page(
-            viewport={"width": 1440, "height": 1200},
-            locale="en-US",
-            timezone_id="UTC",
-        )
-        page.goto(URL, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(8000)
-        text = page.locator("body").inner_text(timeout=30000)
-        browser.close()
-        return text
+def fetch_text() -> str:
+    r = requests.get(
+        READER_URL,
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "text/plain"},
+        timeout=60,
+    )
+    r.raise_for_status()
+    if len(r.text) < 500:
+        raise RuntimeError("Reader response too short")
+    return r.text
 
 
 def parse_field_bosses(text: str):
     rows = []
-    lines = [clean_name(x) for x in text.splitlines() if clean_name(x)]
-
-    # Questlog can render each entry on one line or split boss/time into
-    # adjacent lines. We therefore inspect short rolling windows of lines.
-    windows = []
-    for i in range(len(lines)):
-        windows.append(" ".join(lines[i:i+4]))
-
-    for line in windows:
+    # Jina returns Markdown. Typical rows are bullet points such as:
+    # * T3 Ascended Nirma / T2 Pakilo Naru 23:00 · in 10 hours
+    for line in text.splitlines():
+        line = clean_name(re.sub(r"^[*#>\-]+\s*", "", line))
         if not re.search(r"\bT[123]\b", line) or not re.search(r"\b\d{1,2}:\d{2}\b", line):
             continue
         tm = list(re.finditer(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", line))
@@ -52,13 +47,13 @@ def parse_field_bosses(text: str):
         tmatch = tm[-1]
         source_time = tmatch.group(0)
         before = line[:tmatch.start()].strip()
-
         bosses = []
-        # Capture every Tn name before either '/', the next Tn, or the time.
-        pattern = re.compile(r"\bT([123])\s+(.+?)(?=\s*/\s*T[123]\b|\s+T[123]\b|\s+\d{1,2}:\d{2}\b|$)", re.I)
+        pattern = re.compile(
+            r"\bT([123])\s+(.+?)(?=\s*/\s*T[123]\b|\s+T[123]\b|\s+\d{1,2}:\d{2}\b|$)",
+            re.I,
+        )
         for m in pattern.finditer(before):
             name = clean_name(m.group(2))
-            name = re.sub(r"\s+(?:in|ago)\s+.*$", "", name, flags=re.I).strip()
             if name and len(name) < 90:
                 bosses.append({"tier": f"T{m.group(1)}", "name": name, "type": "field"})
         if bosses:
@@ -66,25 +61,24 @@ def parse_field_bosses(text: str):
 
     merged = {}
     for row in rows:
-        key = row["time"]
-        merged.setdefault(key, [])
+        merged.setdefault(row["time"], [])
         for boss in row["bosses"]:
-            if boss not in merged[key]:
-                merged[key].append(boss)
+            if boss not in merged[row["time"]]:
+                merged[row["time"]].append(boss)
     return [{"time": t, "bosses": b} for t, b in merged.items()]
 
 
 def add_archbosses(text: str, slots):
     arch_names = [
-        "Ramux", "Ascended Giant Cordy", "Ascended Deluzhnoa",
-        "Ascended Queen Bellandir", "Ascended Tevent",
-        "Giant Cordy", "Deluzhnoa", "Queen Bellandir", "Tevent"
+        "Ramux", "Ramus", "Ascended Giant Cordy", "Ascended Deluzhnoa",
+        "Ascended Queen Bellandir", "Ascended Tevent", "Giant Cordy",
+        "Deluzhnoa", "Queen Bellandir", "Tevent",
     ]
     by_time = {s["time"]: s for s in slots}
     flat = clean_name(text)
     for name in arch_names:
         for m in re.finditer(re.escape(name), flat, re.I):
-            window = flat[max(0, m.start()-220):m.end()+220]
+            window = flat[max(0, m.start()-250):m.end()+250]
             if not re.search(r"arch\s*boss|archboss|ark\s*boss", window, re.I):
                 continue
             times = re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", window)
@@ -93,24 +87,24 @@ def add_archbosses(text: str, slots):
             source_time = f"{int(times[0][0]):02d}:{times[0][1]}"
             t = chile_time(source_time)
             slot = by_time.setdefault(t, {"time": t, "bosses": []})
-            boss = {"tier": "ARCH", "name": name, "type": "archboss"}
+            boss = {"tier": "ARCH", "name": "Ramux" if name == "Ramus" else name, "type": "archboss"}
             if boss not in slot["bosses"]:
                 slot["bosses"].append(boss)
     return list(by_time.values())
 
 
 def main():
-    text = rendered_text()
-    slots = parse_field_bosses(text)
-    slots = add_archbosses(text, slots)
+    text = fetch_text()
+    slots = add_archbosses(text, parse_field_bosses(text))
     if not slots:
         print(text[:5000])
-        raise RuntimeError("Questlog rendered, but no boss rows were recognized")
+        raise RuntimeError("No boss rows recognized from reader output")
 
-    preferred = []
-    for s in slots:
-        if s["time"] in {"20:00", "23:00"} or any(b["type"] == "archboss" for b in s["bosses"]):
-            preferred.append(s)
+    preferred = [
+        s for s in slots
+        if s["time"] in {"20:00", "23:00"}
+        or any(b["type"] == "archboss" for b in s["bosses"])
+    ]
     if preferred:
         slots = preferred
 
