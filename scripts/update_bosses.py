@@ -3,16 +3,13 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 URL = "https://questlog.gg/throne-and-liberty/en/event-calendar"
 OUT = Path("site/boss-data.json")
 
 
 def chile_time(source_time: str) -> str:
-    # Questlog's currently displayed boss schedule is one hour behind the
-    # Chile clock observed on Eclipse by the user (19->20, 22->23).
     h, m = map(int, source_time.split(":"))
     return f"{(h + 1) % 24:02d}:{m:02d}"
 
@@ -21,13 +18,32 @@ def clean_name(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip(" -/\n\t")
 
 
+def rendered_text() -> str:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(
+            viewport={"width": 1440, "height": 1200},
+            locale="en-US",
+            timezone_id="UTC",
+        )
+        page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_timeout(8000)
+        text = page.locator("body").inner_text(timeout=30000)
+        browser.close()
+        return text
+
+
 def parse_field_bosses(text: str):
-    # Questlog renders entries such as:
-    # T3 Ascended Nirma / T2 Pakilo Naru 20:00 · in 10 hours
-    # The regex deliberately supports 2+ bosses in the same time slot.
     rows = []
-    for line in text.splitlines():
-        line = clean_name(line)
+    lines = [clean_name(x) for x in text.splitlines() if clean_name(x)]
+
+    # Questlog can render each entry on one line or split boss/time into
+    # adjacent lines. We therefore inspect short rolling windows of lines.
+    windows = []
+    for i in range(len(lines)):
+        windows.append(" ".join(lines[i:i+4]))
+
+    for line in windows:
         if not re.search(r"\bT[123]\b", line) or not re.search(r"\b\d{1,2}:\d{2}\b", line):
             continue
         tm = list(re.finditer(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", line))
@@ -36,18 +52,18 @@ def parse_field_bosses(text: str):
         tmatch = tm[-1]
         source_time = tmatch.group(0)
         before = line[:tmatch.start()].strip()
+
         bosses = []
-        for part in re.split(r"\s*/\s*", before):
-            m = re.search(r"\bT([123])\s+(.+)$", part, re.I)
-            if not m:
-                continue
+        # Capture every Tn name before either '/', the next Tn, or the time.
+        pattern = re.compile(r"\bT([123])\s+(.+?)(?=\s*/\s*T[123]\b|\s+T[123]\b|\s+\d{1,2}:\d{2}\b|$)", re.I)
+        for m in pattern.finditer(before):
             name = clean_name(m.group(2))
-            if name:
+            name = re.sub(r"\s+(?:in|ago)\s+.*$", "", name, flags=re.I).strip()
+            if name and len(name) < 90:
                 bosses.append({"tier": f"T{m.group(1)}", "name": name, "type": "field"})
         if bosses:
             rows.append({"time": chile_time(source_time), "bosses": bosses})
 
-    # Deduplicate rows that may appear in multiple responsive DOM sections.
     merged = {}
     for row in rows:
         key = row["time"]
@@ -59,9 +75,6 @@ def parse_field_bosses(text: str):
 
 
 def add_archbosses(text: str, slots):
-    # Questlog may expose an "Ark Boss" row without the boss name in the
-    # compact upcoming list. When a recognizable Archboss name appears near
-    # a clock time in the page text, attach it to that slot.
     arch_names = [
         "Ramux", "Ascended Giant Cordy", "Ascended Deluzhnoa",
         "Ascended Queen Bellandir", "Ascended Tevent",
@@ -71,7 +84,7 @@ def add_archbosses(text: str, slots):
     flat = clean_name(text)
     for name in arch_names:
         for m in re.finditer(re.escape(name), flat, re.I):
-            window = flat[max(0, m.start()-180):m.end()+180]
+            window = flat[max(0, m.start()-220):m.end()+220]
             if not re.search(r"arch\s*boss|archboss|ark\s*boss", window, re.I):
                 continue
             times = re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", window)
@@ -87,23 +100,13 @@ def add_archbosses(text: str, slots):
 
 
 def main():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
-    }
-    r = requests.get(URL, headers=headers, timeout=30)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
-    text = soup.get_text("\n", strip=True)
-
+    text = rendered_text()
     slots = parse_field_bosses(text)
     slots = add_archbosses(text, slots)
     if not slots:
-        raise RuntimeError("Questlog responded, but no boss rows were recognized")
+        print(text[:5000])
+        raise RuntimeError("Questlog rendered, but no boss rows were recognized")
 
-    # Prefer the evening slots the Eclipse panel is focused on, while keeping
-    # any additional slot containing a detected Archboss.
     preferred = []
     for s in slots:
         if s["time"] in {"20:00", "23:00"} or any(b["type"] == "archboss" for b in s["bosses"]):
