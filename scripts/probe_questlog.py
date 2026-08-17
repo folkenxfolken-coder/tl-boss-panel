@@ -1,8 +1,8 @@
 import asyncio
+import re
 from playwright.async_api import async_playwright
 
 URL = "https://questlog.gg/throne-and-liberty/en/event-calendar"
-KEYWORDS = ("boss", "event", "calendar", "schedule", "trpc", "graphql", "/api/")
 
 async def main():
     async with async_playwright() as p:
@@ -18,65 +18,61 @@ async def main():
             ),
         )
         page = await context.new_page()
+        seen_api = set()
 
         async def inspect_response(resp):
-            u = resp.url.lower()
-            if not any(k in u for k in KEYWORDS):
-                return
-            ct = (resp.headers.get("content-type") or "").lower()
-            print("RESP:", resp.status, resp.url, ct)
-            if any(x in ct for x in ("json", "javascript", "text/plain")):
-                try:
-                    body = await resp.text()
-                    if body:
-                        print("RESP_BODY_START", resp.url)
-                        print(body[:12000])
-                        print("RESP_BODY_END")
-                except Exception as e:
-                    print("RESP_READ_ERROR", resp.url, repr(e))
+            u = resp.url
+            lu = u.lower()
+            if "questlog.gg" in lu and ("/api/" in lu or "trpc" in lu):
+                if u not in seen_api:
+                    seen_api.add(u)
+                    print("API:", resp.status, u, resp.headers.get("content-type", ""))
+                    try:
+                        body = await resp.text()
+                        print("API_BODY:", body[:20000])
+                    except Exception as e:
+                        print("API_BODY_ERROR", repr(e))
 
         page.on("response", lambda resp: asyncio.create_task(inspect_response(resp)))
-        await page.goto(URL, wait_until="domcontentloaded", timeout=90000)
-        await page.wait_for_timeout(8000)
+        await page.goto(URL, wait_until="networkidle", timeout=90000)
+        await page.wait_for_timeout(6000)
 
         print("TITLE:", await page.title())
-        print("URL:", page.url)
-        print("LOCALSTORAGE:", await page.evaluate("Object.fromEntries(Object.entries(localStorage))"))
+        print("BODY:", (await page.locator("body").inner_text())[:12000])
 
-        anchors = await page.locator("a").evaluate_all("els => els.map(e => ({text:(e.innerText||'').trim(), href:e.href, aria:e.getAttribute('aria-label'), title:e.getAttribute('title')}))")
-        print("ANCHORS_START")
-        for a in anchors:
-            blob = f"{a.get('text','')} {a.get('href','')} {a.get('aria','')} {a.get('title','')}".lower()
-            if any(k in blob for k in KEYWORDS):
-                print(a)
-        print("ANCHORS_END")
+        resources = await page.evaluate("performance.getEntriesByType('resource').map(x => x.name)")
+        js_urls = []
+        for u in resources:
+            if "questlog.gg" in u and (u.endswith(".js") or ".js?" in u or "/_nuxt/" in u):
+                if u not in js_urls:
+                    js_urls.append(u)
+        print("JS_COUNT", len(js_urls))
 
-        html = await page.content()
-        for needle in ["Boss Schedule", "Field Bosses", "Ark Boss", "Archboss", "Upcoming Field Bosses"]:
-            pos = html.lower().find(needle.lower())
-            print("HTML_FIND", needle, pos)
-            if pos >= 0:
-                print(html[max(0,pos-2500):pos+5000])
-
-        scripts = await page.locator("script").evaluate_all("els => els.map(e => ({src:e.src, text:(e.textContent||'').slice(0,200000)}))")
-        print("SCRIPTS_START")
-        for s in scripts:
-            blob = (s.get("src", "") + " " + s.get("text", "")).lower()
-            if any(k in blob for k in KEYWORDS):
-                print("SCRIPT_SRC", s.get("src"))
-                txt = s.get("text", "")
-                for needle in ["field boss", "boss schedule", "archboss", "ark boss", "event-calendar", "schedule"]:
-                    pos = txt.lower().find(needle)
+        methods = set()
+        for u in js_urls:
+            try:
+                r = await context.request.get(u, timeout=30000)
+                if not r.ok:
+                    continue
+                text = await r.text()
+                low = text.lower()
+                if "eventcalendar" not in low and "getfieldbossentries" not in low and "ark boss" not in low and "field bosses" not in low:
+                    continue
+                print("JS_MATCH_URL", u)
+                for needle in ["getFieldBossEntries", "eventCalendar", "Ark Boss", "Archboss", "Field Bosses", "Boss Schedule"]:
+                    pos = text.lower().find(needle.lower())
                     if pos >= 0:
-                        print("SCRIPT_MATCH", needle, txt[max(0,pos-1500):pos+5000])
-                        break
-        print("SCRIPTS_END")
+                        print("JS_MATCH", needle)
+                        print(text[max(0, pos-5000):pos+12000])
+                for m in re.findall(r"eventCalendar\.([A-Za-z0-9_]+)", text):
+                    methods.add(m)
+                for m in re.findall(r"eventCalendar[^A-Za-z0-9_]+([A-Za-z0-9_]{3,})", text):
+                    if m.lower() not in {"query", "mutate", "value", "data"}:
+                        methods.add(m)
+            except Exception as e:
+                print("JS_ERR", u, repr(e))
 
-        text = await page.locator("body").inner_text()
-        print("BODY_START")
-        print(text[:30000])
-        print("BODY_END")
-        await page.wait_for_timeout(3000)
+        print("EVENTCAL_METHODS", sorted(methods))
         await browser.close()
 
 if __name__ == "__main__":
