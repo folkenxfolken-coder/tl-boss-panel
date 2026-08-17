@@ -1,6 +1,6 @@
 {
   "source": "Questlog indexed dated rotation + Eclipse in-game calendar",
-  "updated_at": "2026-08-17T12:16:06.062216+00:00",
+  "updated_at": "2026-08-17T12:23:59.691448+00:00",
   "fallback": false,
   "model": "dated-rotation-v2-all-slots",
   "anchor": "2026-07-15T14:00 America/Santiago = Ascended Adentus + Daigon",
