@@ -1,6 +1,6 @@
 {
   "source": "Questlog indexed boss rotation + official TL Update 4.5.0",
-  "updated_at": "2026-08-17T03:09:57.265082+00:00",
+  "updated_at": "2026-08-17T05:03:16.751371+00:00",
   "fallback": false,
   "model": "dated-rotation-v1",
   "anchor": "2026-07-09T13:00 America/Santiago",
