@@ -1,176 +1,96 @@
 import json
-import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
-import requests
-
-URL = "https://questlog.gg/throne-and-liberty/en/rain-schedule"
-QUESTLOG_PAGES = [
-    "https://questlog.gg/throne-and-liberty/en/rain-schedule",
-    "https://questlog.gg/throne-and-liberty/en/server-status",
-    "https://questlog.gg/throne-and-liberty/en/day-and-night-schedule",
-]
 OUT = Path("site/boss-data.json")
+CHILE = ZoneInfo("America/Santiago")
+
+# Questlog's indexed calendar after update 4.2.0 exposes a stable 16-step
+# T3/T2 rotation. 2026-07-09 13:00 is an explicit date anchor where the
+# calendar shows Ascended Adentus + Daigon. Hidden slots (01/13/16) still
+# advance the rotation even though this dashboard only displays 20/23.
+ANCHOR_DATE = datetime(2026, 7, 9, 13, 0, tzinfo=CHILE)
+ANCHOR_INDEX = 5
+ALL_FIELD_HOURS = [1, 13, 16, 20, 23]
+DISPLAY_HOURS = [20, 23]
+
+ROTATION = [
+    ("Ascended Aridus", "Leviathan"),
+    ("Ascended Malakar", "Manticus"),
+    ("Ascended Kowazan", "Pakilo Naru"),
+    ("Ascended Talus", "Leviathan"),
+    ("Ascended Grand Aelon", "Manticus"),
+    ("Ascended Adentus", "Daigon"),
+    ("Ascended Nirma", "Pakilo Naru"),
+    ("Ascended Ahzreil", "Leviathan"),
+    ("Ascended Excavator-9", "Daigon"),
+    ("Ascended Minezerok", "Manticus"),
+    ("Ascended Junobote", "Leviathan"),
+    ("Ascended Morokai", "Pakilo Naru"),
+    ("Ascended Cornelius", "Daigon"),
+    ("Ascended Adentus", "Pakilo Naru"),
+    ("Ascended Chernobog", "Daigon"),
+    ("Ascended Ahzreil", "Manticus"),
+]
 
 
-def chile_time(source_time: str) -> str:
-    # Questlog's shared timer sidebar currently exposes the relevant boss slots
-    # as 20:00 and 23:00; those are also the observed Eclipse times in Chile.
-    h, m = map(int, source_time.split(":"))
-    return f"{h:02d}:{m:02d}"
+def rotation_index(target: datetime) -> int:
+    """Return rotation phase for an exact standard field-boss slot."""
+    if target.hour not in ALL_FIELD_HOURS or target.minute != 0:
+        raise ValueError("target must be a standard field boss slot")
+    days = (target.date() - ANCHOR_DATE.date()).days
+    anchor_pos = ALL_FIELD_HOURS.index(ANCHOR_DATE.hour)
+    target_pos = ALL_FIELD_HOURS.index(target.hour)
+    steps = days * len(ALL_FIELD_HOURS) + target_pos - anchor_pos
+    return (ANCHOR_INDEX + steps) % len(ROTATION)
 
 
-def clean_name(s: str) -> str:
-    return re.sub(r"\s+", " ", s).strip(" -/\n\t")
-
-
-def strings_in(value):
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for item in value.values():
-            yield from strings_in(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from strings_in(item)
-
-
-def fetch_microlink_text() -> tuple[str, str]:
-    errors = []
-    for page in QUESTLOG_PAGES:
-        endpoint = "https://api.microlink.io/?url=" + quote(page, safe="") + "&text=true&meta=false"
-        try:
-            r = requests.get(
-                endpoint,
-                headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
-                timeout=75,
-            )
-            r.raise_for_status()
-            payload = r.json()
-            candidates = [s for s in strings_in(payload) if len(s) > 200]
-            useful = [s for s in candidates if re.search(r"Upcoming Field Bosses|T[123]", s, re.I)]
-            if useful:
-                return max(useful, key=len), "microlink:" + page.rsplit("/", 1)[-1]
-        except Exception as exc:
-            errors.append(f"{page}: {exc}")
-    raise RuntimeError(" ; ".join(errors) or "Microlink did not return boss text")
-
-
-def fetch_jina_text() -> tuple[str, str]:
-    errors = []
-    for page in QUESTLOG_PAGES:
-        reader = "https://r.jina.ai/http://" + page.removeprefix("https://")
-        try:
-            r = requests.get(
-                reader,
-                headers={"User-Agent": "Mozilla/5.0", "Accept": "text/plain"},
-                timeout=60,
-            )
-            r.raise_for_status()
-            text = r.text
-            if len(text) > 500 and re.search(r"Upcoming Field Bosses|T[123]", text, re.I):
-                return text, "jina:" + page.rsplit("/", 1)[-1]
-        except Exception as exc:
-            errors.append(f"{page}: {exc}")
-    raise RuntimeError(" ; ".join(errors) or "Jina did not return boss text")
-
-
-def fetch_text() -> tuple[str, str]:
-    errors = []
-    for label, fn in (("microlink", fetch_microlink_text), ("jina", fetch_jina_text)):
-        try:
-            return fn()
-        except Exception as exc:
-            errors.append(f"{label}: {exc}")
-    raise RuntimeError(" | ".join(errors))
-
-
-def parse_field_bosses(text: str):
-    rows = []
-    lines = [clean_name(re.sub(r"^[*#>\-]+\s*", "", x)) for x in text.splitlines()]
-    candidates = [x for x in lines if x]
-    candidates += [clean_name(" ".join(lines[i:i+5])) for i in range(len(lines))]
-
-    for line in candidates:
-        if not re.search(r"\bT[123]\b", line) or not re.search(r"\b\d{1,2}:\d{2}\b", line):
-            continue
-        tm = list(re.finditer(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", line))
-        if not tm:
-            continue
-        tmatch = tm[-1]
-        source_time = tmatch.group(0)
-        before = line[:tmatch.start()].strip()
-        bosses = []
-        pattern = re.compile(
-            r"\bT([123])\s+(.+?)(?=\s*/\s*T[123]\b|\s+T[123]\b|\s+\d{1,2}:\d{2}\b|$)",
-            re.I,
-        )
-        for m in pattern.finditer(before):
-            name = clean_name(m.group(2))
-            name = re.sub(r"\s+(?:in|hace|em)\s+.*$", "", name, flags=re.I).strip()
-            if name and len(name) < 90 and not re.fullmatch(r"Field Boss(?:es)?|Jefes? de Campo", name, re.I):
-                bosses.append({"tier": f"T{m.group(1)}", "name": name, "type": "field"})
-        if bosses:
-            rows.append({"time": chile_time(source_time), "bosses": bosses})
-
-    merged = {}
-    for row in rows:
-        merged.setdefault(row["time"], [])
-        for boss in row["bosses"]:
-            if boss not in merged[row["time"]]:
-                merged[row["time"]].append(boss)
-    return [{"time": t, "bosses": b} for t, b in merged.items()]
-
-
-def add_archbosses(text: str, slots):
-    arch_names = [
-        "Ramux", "Ramus", "Ascended Giant Cordy", "Ascended Deluzhnoa",
-        "Ascended Queen Bellandir", "Ascended Tevent", "Giant Cordy",
-        "Deluzhnoa", "Queen Bellandir", "Tevent",
+def field_bosses_for(target: datetime):
+    i = rotation_index(target)
+    t3, t2 = ROTATION[i]
+    return [
+        {"tier": "T3", "name": t3, "type": "field"},
+        {"tier": "T2", "name": t2, "type": "field"},
     ]
-    by_time = {s["time"]: s for s in slots}
-    flat = clean_name(text)
-    for name in arch_names:
-        for m in re.finditer(re.escape(name), flat, re.I):
-            window = flat[max(0, m.start()-250):m.end()+250]
-            if not re.search(r"arch\s*boss|archboss|ark\s*boss|arqui", window, re.I):
+
+
+def add_known_archbosses(target: datetime, bosses: list[dict]):
+    # Update 4.5.0 added Ramux Peace/Guild events on Tuesdays and Fridays
+    # at 19:00 and 22:00 server time. For this Eclipse/Chile dashboard the
+    # user-observed corresponding display slots are 20:00 and 23:00.
+    if target.weekday() in {1, 4}:  # Tuesday, Friday
+        bosses.append({"tier": "ARCH", "name": "Ramux", "type": "archboss"})
+    return bosses
+
+
+def build_slots():
+    now = datetime.now(CHILE)
+    slots = []
+    # Include enough future data that the page never has to invent/repeat names.
+    for offset in range(0, 8):
+        day = (now + timedelta(days=offset)).date()
+        for hour in DISPLAY_HOURS:
+            target = datetime(day.year, day.month, day.day, hour, 0, tzinfo=CHILE)
+            if target <= now:
                 continue
-            times = re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", window)
-            if not times:
-                continue
-            source_time = f"{int(times[0][0]):02d}:{times[0][1]}"
-            t = chile_time(source_time)
-            slot = by_time.setdefault(t, {"time": t, "bosses": []})
-            boss = {"tier": "ARCH", "name": "Ramux" if name == "Ramus" else name, "type": "archboss"}
-            if boss not in slot["bosses"]:
-                slot["bosses"].append(boss)
-    return list(by_time.values())
+            bosses = add_known_archbosses(target, field_bosses_for(target))
+            slots.append({
+                "date": target.date().isoformat(),
+                "time": target.strftime("%H:%M"),
+                "bosses": bosses,
+            })
+    return slots[:10]
 
 
 def main():
-    text, fetcher = fetch_text()
-    slots = add_archbosses(text, parse_field_bosses(text))
-    if not slots:
-        print(text[:8000])
-        raise RuntimeError(f"No boss rows recognized from {fetcher} output")
-
-    preferred = [
-        s for s in slots
-        if s["time"] in {"20:00", "23:00"}
-        or any(b["type"] == "archboss" for b in s["bosses"])
-    ]
-    if preferred:
-        slots = preferred
-
-    slots.sort(key=lambda x: tuple(map(int, x["time"].split(":"))))
     payload = {
-        "source": URL,
+        "source": "Questlog indexed boss rotation + official TL Update 4.5.0",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "fallback": False,
-        "fetcher": fetcher,
-        "slots": slots,
+        "model": "dated-rotation-v1",
+        "anchor": "2026-07-09T13:00 America/Santiago",
+        "slots": build_slots(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
