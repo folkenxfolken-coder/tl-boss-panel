@@ -6,16 +6,20 @@ from urllib.parse import quote
 
 import requests
 
-URL = "https://questlog.gg/throne-and-liberty/sa/event-calendar"
-READER_URL = "https://r.jina.ai/http://questlog.gg/throne-and-liberty/sa/event-calendar"
+URL = "https://questlog.gg/throne-and-liberty/en/rain-schedule"
+QUESTLOG_PAGES = [
+    "https://questlog.gg/throne-and-liberty/en/rain-schedule",
+    "https://questlog.gg/throne-and-liberty/en/server-status",
+    "https://questlog.gg/throne-and-liberty/en/day-and-night-schedule",
+]
 OUT = Path("site/boss-data.json")
 
 
 def chile_time(source_time: str) -> str:
-    # Ajuste observado en Eclipse por el usuario: la franja mostrada como
-    # 19:00/22:00 en la fuente corresponde a 20:00/23:00 en su horario de Chile.
+    # Questlog's shared timer sidebar currently exposes the relevant boss slots
+    # as 20:00 and 23:00; those are also the observed Eclipse times in Chile.
     h, m = map(int, source_time.split(":"))
-    return f"{(h + 1) % 24:02d}:{m:02d}"
+    return f"{h:02d}:{m:02d}"
 
 
 def clean_name(s: str) -> str:
@@ -33,60 +37,51 @@ def strings_in(value):
             yield from strings_in(item)
 
 
-def fetch_microlink_text() -> str:
-    # Microlink renders JavaScript in a real browser. Its free endpoint is enough
-    # for this low-frequency dashboard and can sometimes reach pages that reject
-    # datacenter/headless requests made directly by GitHub Actions.
-    endpoint = (
-        "https://api.microlink.io/?url=" + quote(URL, safe="")
-        + "&text=true&meta=false"
-    )
-    r = requests.get(
-        endpoint,
-        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
-        timeout=75,
-    )
-    r.raise_for_status()
-
-    try:
-        payload = r.json()
-        candidates = [s for s in strings_in(payload) if len(s) > 200]
-        # Prefer text that actually contains the timer section.
-        useful = [
-            s for s in candidates
-            if re.search(r"Field Boss|Jefes? de Campo|Chefes? de Campo|T[123]", s, re.I)
-        ]
-        if useful:
-            return max(useful, key=len)
-        if candidates:
-            return max(candidates, key=len)
-    except ValueError:
-        pass
-
-    if len(r.text) > 500:
-        return r.text
-    raise RuntimeError("Microlink response did not contain usable page text")
+def fetch_microlink_text() -> tuple[str, str]:
+    errors = []
+    for page in QUESTLOG_PAGES:
+        endpoint = "https://api.microlink.io/?url=" + quote(page, safe="") + "&text=true&meta=false"
+        try:
+            r = requests.get(
+                endpoint,
+                headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+                timeout=75,
+            )
+            r.raise_for_status()
+            payload = r.json()
+            candidates = [s for s in strings_in(payload) if len(s) > 200]
+            useful = [s for s in candidates if re.search(r"Upcoming Field Bosses|T[123]", s, re.I)]
+            if useful:
+                return max(useful, key=len), "microlink:" + page.rsplit("/", 1)[-1]
+        except Exception as exc:
+            errors.append(f"{page}: {exc}")
+    raise RuntimeError(" ; ".join(errors) or "Microlink did not return boss text")
 
 
-def fetch_jina_text() -> str:
-    r = requests.get(
-        READER_URL,
-        headers={"User-Agent": "Mozilla/5.0", "Accept": "text/plain"},
-        timeout=60,
-    )
-    r.raise_for_status()
-    if len(r.text) < 500:
-        raise RuntimeError("Jina reader response too short")
-    return r.text
+def fetch_jina_text() -> tuple[str, str]:
+    errors = []
+    for page in QUESTLOG_PAGES:
+        reader = "https://r.jina.ai/http://" + page.removeprefix("https://")
+        try:
+            r = requests.get(
+                reader,
+                headers={"User-Agent": "Mozilla/5.0", "Accept": "text/plain"},
+                timeout=60,
+            )
+            r.raise_for_status()
+            text = r.text
+            if len(text) > 500 and re.search(r"Upcoming Field Bosses|T[123]", text, re.I):
+                return text, "jina:" + page.rsplit("/", 1)[-1]
+        except Exception as exc:
+            errors.append(f"{page}: {exc}")
+    raise RuntimeError(" ; ".join(errors) or "Jina did not return boss text")
 
 
 def fetch_text() -> tuple[str, str]:
     errors = []
     for label, fn in (("microlink", fetch_microlink_text), ("jina", fetch_jina_text)):
         try:
-            text = fn()
-            if len(text) > 500:
-                return text, label
+            return fn()
         except Exception as exc:
             errors.append(f"{label}: {exc}")
     raise RuntimeError(" | ".join(errors))
@@ -95,8 +90,6 @@ def fetch_text() -> tuple[str, str]:
 def parse_field_bosses(text: str):
     rows = []
     lines = [clean_name(re.sub(r"^[*#>\-]+\s*", "", x)) for x in text.splitlines()]
-    # Además de líneas individuales, inspeccionamos ventanas cortas porque la
-    # fuente puede separar tier, nombre y hora en líneas consecutivas.
     candidates = [x for x in lines if x]
     candidates += [clean_name(" ".join(lines[i:i+5])) for i in range(len(lines))]
 
@@ -117,7 +110,6 @@ def parse_field_bosses(text: str):
         for m in pattern.finditer(before):
             name = clean_name(m.group(2))
             name = re.sub(r"\s+(?:in|hace|em)\s+.*$", "", name, flags=re.I).strip()
-            # Excluye textos genéricos/labels que no son nombres de bosses.
             if name and len(name) < 90 and not re.fullmatch(r"Field Boss(?:es)?|Jefes? de Campo", name, re.I):
                 bosses.append({"tier": f"T{m.group(1)}", "name": name, "type": "field"})
         if bosses:
@@ -164,8 +156,6 @@ def main():
         print(text[:8000])
         raise RuntimeError(f"No boss rows recognized from {fetcher} output")
 
-    # El panel prioriza las franjas que el usuario usa en Chile, pero conserva
-    # cualquier franja adicional si contiene un Archboss.
     preferred = [
         s for s in slots
         if s["time"] in {"20:00", "23:00"}
