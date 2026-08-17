@@ -28,12 +28,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install scraper dependencies
-        run: |
-          pip install requests beautifulsoup4 playwright
-          python -m playwright install --with-deps chromium
-
-      - name: Refresh live Questlog boss schedule
+      - name: Build Eclipse boss schedule
         run: python scripts/update_bosses.py
 
       - name: Configure GitHub Pages
