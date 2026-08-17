@@ -30,16 +30,10 @@ jobs:
 
       - name: Install scraper dependencies
         run: |
-          pip install requests playwright
+          pip install playwright
           python -m playwright install --with-deps chromium
 
-      - name: Probe live server calendar
-        continue-on-error: true
-        run: |
-          python scripts/probe_questlog.py 2>&1 | tee site/probe-output.txt
-
-      - name: Refresh boss schedule for this deployment
-        continue-on-error: true
+      - name: Refresh live Questlog boss schedule
         run: python scripts/update_bosses.py
 
       - name: Configure GitHub Pages
