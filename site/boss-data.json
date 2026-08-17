@@ -1,13 +1,20 @@
 {
-  "source": "Questlog indexed boss rotation + official TL Update 4.5.0",
-  "updated_at": "2026-08-17T11:04:38.238465+00:00",
+  "source": "Questlog indexed dated rotation + Eclipse in-game calendar",
+  "updated_at": "2026-08-17T11:52:33.939508+00:00",
   "fallback": false,
-  "model": "dated-rotation-v1",
-  "anchor": "2026-07-09T13:00 America/Santiago",
+  "model": "dated-rotation-v2-all-slots",
+  "anchor": "2026-07-15T14:00 America/Santiago = Ascended Adentus + Daigon",
+  "field_hours_chile": [
+    "00:00",
+    "02:00",
+    "14:00",
+    "17:00",
+    "21:00"
+  ],
   "slots": [
     {
       "date": "2026-08-17",
-      "time": "20:00",
+      "time": "14:00",
       "bosses": [
         {
           "tier": "T3",
@@ -23,7 +30,7 @@
     },
     {
       "date": "2026-08-17",
-      "time": "23:00",
+      "time": "17:00",
       "bosses": [
         {
           "tier": "T3",
@@ -38,8 +45,56 @@
       ]
     },
     {
+      "date": "2026-08-17",
+      "time": "21:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Cornelius",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Daigon",
+          "type": "field"
+        }
+      ]
+    },
+    {
       "date": "2026-08-18",
-      "time": "20:00",
+      "time": "00:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Adentus",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Pakilo Naru",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-18",
+      "time": "02:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Chernobog",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Daigon",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-18",
+      "time": "14:00",
       "bosses": [
         {
           "tier": "T3",
@@ -50,17 +105,12 @@
           "tier": "T2",
           "name": "Manticus",
           "type": "field"
-        },
-        {
-          "tier": "ARCH",
-          "name": "Ramux",
-          "type": "archboss"
         }
       ]
     },
     {
       "date": "2026-08-18",
-      "time": "23:00",
+      "time": "17:00",
       "bosses": [
         {
           "tier": "T3",
@@ -71,17 +121,60 @@
           "tier": "T2",
           "name": "Leviathan",
           "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-18",
+      "time": "21:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Malakar",
+          "type": "field"
         },
         {
-          "tier": "ARCH",
-          "name": "Ramux",
-          "type": "archboss"
+          "tier": "T2",
+          "name": "Manticus",
+          "type": "field"
         }
       ]
     },
     {
       "date": "2026-08-19",
-      "time": "20:00",
+      "time": "00:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Kowazan",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Pakilo Naru",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-19",
+      "time": "02:00",
+      "bosses": [
+        {
+          "tier": "T3",
+          "name": "Ascended Talus",
+          "type": "field"
+        },
+        {
+          "tier": "T2",
+          "name": "Leviathan",
+          "type": "field"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-19",
+      "time": "14:00",
       "bosses": [
         {
           "tier": "T3",
@@ -97,7 +190,7 @@
     },
     {
       "date": "2026-08-19",
-      "time": "23:00",
+      "time": "17:00",
       "bosses": [
         {
           "tier": "T3",
@@ -112,61 +205,24 @@
       ]
     },
     {
-      "date": "2026-08-20",
-      "time": "20:00",
+      "date": "2026-08-19",
+      "time": "21:00",
       "bosses": [
         {
           "tier": "T3",
-          "name": "Ascended Minezerok",
+          "name": "Ascended Nirma",
           "type": "field"
         },
         {
           "tier": "T2",
-          "name": "Manticus",
+          "name": "Pakilo Naru",
           "type": "field"
         }
       ]
     },
     {
       "date": "2026-08-20",
-      "time": "23:00",
-      "bosses": [
-        {
-          "tier": "T3",
-          "name": "Ascended Junobote",
-          "type": "field"
-        },
-        {
-          "tier": "T2",
-          "name": "Leviathan",
-          "type": "field"
-        }
-      ]
-    },
-    {
-      "date": "2026-08-21",
-      "time": "20:00",
-      "bosses": [
-        {
-          "tier": "T3",
-          "name": "Ascended Chernobog",
-          "type": "field"
-        },
-        {
-          "tier": "T2",
-          "name": "Daigon",
-          "type": "field"
-        },
-        {
-          "tier": "ARCH",
-          "name": "Ramux",
-          "type": "archboss"
-        }
-      ]
-    },
-    {
-      "date": "2026-08-21",
-      "time": "23:00",
+      "time": "00:00",
       "bosses": [
         {
           "tier": "T3",
@@ -175,13 +231,8 @@
         },
         {
           "tier": "T2",
-          "name": "Manticus",
+          "name": "Leviathan",
           "type": "field"
-        },
-        {
-          "tier": "ARCH",
-          "name": "Ramux",
-          "type": "archboss"
         }
       ]
     }
